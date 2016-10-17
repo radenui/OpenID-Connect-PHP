@@ -22,13 +22,6 @@
  */
 
 /**
- * Use session to manage a nonce
- */
-if (!isset($_SESSION)) {
-    session_start();
-}
-
-/**
  *
  * JWT signature verification support by Jonathan Reed <jdreed@mit.edu>
  * Licensed under the same license as the rest of this file.
@@ -86,7 +79,7 @@ if (!function_exists('json_decode')) {
 
 /**
  *
- * Please note this class stores nonces in $_SESSION['openid_connect_nonce']
+ * Please note this class stores nonces by default in $_SESSION['openid_connect_nonce']
  *
  */
 class OpenIDConnectClient
@@ -209,8 +202,8 @@ class OpenIDConnectClient
                 throw new OpenIDConnectClientException('Got response: ' . $token_json->error);
             }
 
-            // Do an OpenID Connect session check
-            if ($_REQUEST['state'] != $_SESSION['openid_connect_state']) {
+            // Do an OpenID Connect state check
+            if ($_REQUEST['state'] != $this->getState()) {
                 throw new OpenIDConnectClientException("Unable to determine state");
             }
 
@@ -232,8 +225,8 @@ class OpenIDConnectClient
             // If this is a valid claim
             if ($this->verifyJWTclaims($claims)) {
 
-                // Clean up the session a little
-                unset($_SESSION['openid_connect_nonce']);
+                // Clean up the nonce
+                $this->setNonce('');
 
                 // Save the id token
                 $this->idToken = $token_json->id_token;
@@ -371,14 +364,12 @@ class OpenIDConnectClient
         $auth_endpoint = $this->getProviderConfigValue("authorization_endpoint");
         $response_type = "code";
         
-        // Generate and store a nonce in the session
+        // Generate and store a nonce
         // The nonce is an arbitrary value
-        $nonce = $this->generateRandString();
-        $_SESSION['openid_connect_nonce'] = $nonce;
+        $nonce = $this->setNonce($this->generateRandString());
 
         // State essentially acts as a session key for OIDC
-        $state = $this->generateRandString();
-        $_SESSION['openid_connect_state'] = $state;
+        $state = $this->setState($this->generateRandString());
 
         $auth_params = array_merge($this->authParams, array(
             'response_type' => $response_type,
@@ -401,8 +392,10 @@ class OpenIDConnectClient
         }
         
         $auth_endpoint .= '?' . http_build_query($auth_params, null, '&');
-
-        session_commit();
+	
+        if (isset($_SESSION)) {
+            session_commit();
+        }
         $this->redirect($auth_endpoint);
     }
 
@@ -562,7 +555,7 @@ class OpenIDConnectClient
     private function verifyJWTclaims($claims) {
         return (($claims->iss == $this->getProviderURL())
             && (($claims->aud == $this->clientID) || (in_array($this->clientID, $claims->aud)))
-            && ($claims->nonce == $_SESSION['openid_connect_nonce']));
+            && ($claims->nonce == $this->getNonce()));
 
     }
 
@@ -872,5 +865,59 @@ class OpenIDConnectClient
      */
     public function getAccessTokenPayload() {
         return $this->decodeJWT($this->accessToken, 1);
+    }
+	
+    /**
+     * Stores nonce
+     *
+     * @param string $nonce
+     * @return string
+     */
+    protected function setNonce($nonce) {
+        /**
+         * Use session to manage a nonce
+         */
+        if (!isset($_SESSION)) {
+            session_start();
+        }
+        
+        $_SESSION['openid_connect_nonce'] = $nonce;
+        return $nonce;
+    }
+    
+    /**
+     * Get stored nonce 
+     *
+     * @return string
+     */
+    protected function getNonce() {
+        return $_SESSION['openid_connect_nonce'];
+    }
+    
+    /**
+     * Stores $state
+     *
+     * @param string $state
+     * @return string
+     */
+    protected function setState($state) {
+        /**
+         * Use session to manage a nonce
+         */
+        if (!isset($_SESSION)) {
+            session_start();
+        }
+        
+        $_SESSION['openid_connect_state'] = $state;
+        return $state;
+    }
+    
+    /**
+     * Get stored state 
+     *
+     * @return string
+     */
+    protected function getState() {
+        return $_SESSION['openid_connect_state'];
     }
 }
